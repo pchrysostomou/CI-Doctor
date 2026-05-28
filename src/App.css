@@ -69,6 +69,7 @@
 .hero-band,
 .workbench,
 .insight-grid,
+.flow-band,
 .automation-band,
 .history-band {
   margin: 0 auto;
@@ -307,6 +308,11 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: wait;
+  opacity: 0.76;
+}
+
 .sample,
 .primary-button,
 .secondary-button {
@@ -476,6 +482,54 @@ button {
   color: #111827;
 }
 
+.engine-card {
+  align-items: flex-start;
+  border: 1px solid #dce3ea;
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+}
+
+.engine-card svg {
+  color: #0f766e;
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.engine-card span {
+  color: #64748b;
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.engine-card strong {
+  color: #111827;
+  display: block;
+  margin: 2px 0 4px;
+}
+
+.engine-card p {
+  color: #526170;
+  line-height: 1.5;
+}
+
+.engine-card.ai-backend {
+  background: #ecfdf5;
+  border-color: #99f6e4;
+}
+
+.engine-card.backend-rules {
+  background: #fff8e1;
+  border-color: #f0c34e;
+}
+
+.engine-card.browser-rules {
+  background: #f3f7fb;
+}
+
 .confidence-card {
   background: linear-gradient(135deg, #eff6ff, #f0fdfa);
   border: 1px solid #bfdbfe;
@@ -638,6 +692,37 @@ button {
   border-color: #f0c34e;
 }
 
+.flow-band {
+  display: grid;
+  gap: 18px;
+}
+
+.flow-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.flow-step {
+  background: #ffffff;
+  border: 1px solid #dce3ea;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+}
+
+.flow-step > span {
+  color: #0f766e;
+  font-family: var(--mono);
+  font-weight: 900;
+}
+
+.flow-step p {
+  color: #526170;
+  line-height: 1.55;
+}
+
 .automation-band,
 .history-band {
   display: grid;
@@ -699,6 +784,7 @@ button {
   .hero-band,
   .workbench,
   .insight-grid,
+  .flow-grid,
   .automation-grid {
     grid-template-columns: 1fr;
   }
@@ -726,6 +812,7 @@ button {
   .hero-band,
   .workbench,
   .insight-grid,
+  .flow-band,
   .automation-band,
   .history-band {
     padding-left: 16px;

@@ -21,6 +21,7 @@ import {
   Zap,
 } from 'lucide-react'
 import './App.css'
+import { requestAnalysis, type AnalysisSource } from './lib/apiClient'
 import { analyzeCiLog, calculateMonthlySavings, recommendPlan } from './lib/analyzer'
 import { logSamples } from './data/logSamples'
 import type { AnalysisResult, SavedAnalysis } from './lib/analyzer'
@@ -34,6 +35,11 @@ const liveEvents = [
   'fix plan drafted',
   'value estimated',
 ]
+const sourceLabels: Record<AnalysisSource, string> = {
+  'ai-backend': 'AI backend',
+  'backend-rules': 'Vercel backend rules',
+  'browser-rules': 'Browser rules fallback',
+}
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('en-GB', {
@@ -80,6 +86,11 @@ function App() {
   const [hourlyRate, setHourlyRate] = useState(28)
   const [activeSignalIndex, setActiveSignalIndex] = useState(0)
   const [saveMessage, setSaveMessage] = useState('')
+  const [analysisSource, setAnalysisSource] = useState<AnalysisSource>('browser-rules')
+  const [analysisNote, setAnalysisNote] = useState(
+    'Initial demo analysis is running locally in the browser.',
+  )
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
 
   const livePreview = useMemo(() => analyzeCiLog(logText), [logText])
   const monthlySavings = calculateMonthlySavings({
@@ -119,14 +130,21 @@ function App() {
     setSelectedSampleId(sample.id)
     setLogText(sample.log)
     setLastAnalysis(analyzeCiLog(sample.log))
+    setAnalysisSource('browser-rules')
+    setAnalysisNote('Demo sample analyzed instantly with deterministic browser rules.')
   }
 
-  function analyzeCurrentLog() {
-    setLastAnalysis(analyzeCiLog(logText))
+  async function analyzeCurrentLog() {
+    setIsAnalyzing(true)
+    const response = await requestAnalysis(logText)
+    setLastAnalysis(response.analysis)
+    setAnalysisSource(response.source)
+    setAnalysisNote(response.note)
+    setIsAnalyzing(false)
   }
 
   function saveCurrentAnalysis() {
-    const result = analyzeCiLog(logText)
+    const result = livePreview.title !== lastAnalysis.title ? livePreview : lastAnalysis
     const saved: SavedAnalysis = {
       id: `${Date.now()}-${result.category}`,
       title: result.title,
@@ -136,6 +154,8 @@ function App() {
     }
 
     setLastAnalysis(result)
+    setAnalysisSource('browser-rules')
+    setAnalysisNote('Saved case used the current visible diagnosis state.')
     setSaveMessage(`${result.title} saved`)
     setHistory((current) => [saved, ...current].slice(0, 5))
   }
@@ -152,6 +172,7 @@ function App() {
         <nav className="topnav" aria-label="Sections">
           <a href="#workspace">Analyze</a>
           <a href="#money">Revenue</a>
+          <a href="#how-it-works">Flow</a>
           <a href="#automation">Tests</a>
         </nav>
       </header>
@@ -233,9 +254,14 @@ function App() {
           />
 
           <div className="action-row">
-            <button className="primary-button" onClick={analyzeCurrentLog} type="button">
+            <button
+              className="primary-button"
+              disabled={isAnalyzing}
+              onClick={analyzeCurrentLog}
+              type="button"
+            >
               <Wand2 aria-hidden="true" size={18} />
-              Analyze log
+              {isAnalyzing ? 'Analyzing...' : 'Analyze log'}
             </button>
             <button className="secondary-button" onClick={saveCurrentAnalysis} type="button">
               <Save aria-hidden="true" size={18} />
@@ -250,7 +276,13 @@ function App() {
           ) : null}
         </div>
 
-        <DiagnosisPanel result={lastAnalysis} preview={livePreview} />
+        <DiagnosisPanel
+          isAnalyzing={isAnalyzing}
+          note={analysisNote}
+          result={lastAnalysis}
+          source={analysisSource}
+          preview={livePreview}
+        />
       </section>
 
       <section className="insight-grid" aria-label="Business and product model">
@@ -338,6 +370,39 @@ function App() {
         </div>
       </section>
 
+      <section className="flow-band" id="how-it-works" aria-label="How CI Doctor works">
+        <div className="section-title">
+          <Bot aria-hidden="true" size={21} />
+          <div>
+            <p className="kicker">How it works</p>
+            <h2>From pasted log to tested diagnosis</h2>
+          </div>
+        </div>
+
+        <div className="flow-grid">
+          <FlowStep
+            number="01"
+            title="User action"
+            text="You paste a GitHub Actions or test log and press Analyze log."
+          />
+          <FlowStep
+            number="02"
+            title="Backend route"
+            text="The app calls /api/analyze. On Vercel, that route runs server-side."
+          />
+          <FlowStep
+            number="03"
+            title="AI or fallback"
+            text="If OPENAI_API_KEY exists, the backend asks OpenAI. If not, it uses deterministic CI rules."
+          />
+          <FlowStep
+            number="04"
+            title="Automation"
+            text="Vitest and Playwright check the analyzer logic, UI clicks, saved cases, and browser flow."
+          />
+        </div>
+      </section>
+
       <section className="automation-band" id="automation" aria-label="Automation tests">
         <div className="section-title">
           <ClipboardList aria-hidden="true" size={21} />
@@ -398,15 +463,18 @@ function App() {
 }
 
 type DiagnosisPanelProps = {
+  isAnalyzing: boolean
+  note: string
   result: AnalysisResult
+  source: AnalysisSource
   preview: AnalysisResult
 }
 
-function DiagnosisPanel({ result, preview }: DiagnosisPanelProps) {
+function DiagnosisPanel({ isAnalyzing, note, result, source, preview }: DiagnosisPanelProps) {
   const previewChanged = preview.title !== result.title
 
   return (
-    <aside className="diagnosis-pane" aria-label="Diagnosis result">
+    <aside aria-busy={isAnalyzing} className="diagnosis-pane" aria-label="Diagnosis result">
       <div className="result-header">
         <div>
           <p className="kicker">Diagnosis</p>
@@ -416,6 +484,15 @@ function DiagnosisPanel({ result, preview }: DiagnosisPanelProps) {
       </div>
 
       <p className="summary">{result.summary}</p>
+
+      <div className={`engine-card ${source}`}>
+        <Bot aria-hidden="true" size={18} />
+        <div>
+          <span>Analysis engine</span>
+          <strong>{sourceLabels[source]}</strong>
+          <p>{note}</p>
+        </div>
+      </div>
 
       <div className="metrics-row">
         <Metric label="Category" value={result.category} />
@@ -466,6 +543,22 @@ function DiagnosisPanel({ result, preview }: DiagnosisPanelProps) {
         </p>
       ) : null}
     </aside>
+  )
+}
+
+type FlowStepProps = {
+  number: string
+  title: string
+  text: string
+}
+
+function FlowStep({ number, title, text }: FlowStepProps) {
+  return (
+    <div className="flow-step">
+      <span>{number}</span>
+      <h3>{title}</h3>
+      <p>{text}</p>
+    </div>
   )
 }
 

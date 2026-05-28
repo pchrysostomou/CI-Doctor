@@ -1,10 +1,12 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { analyzeCiLog } from './lib/analyzer'
 
 describe('CI Doctor app', () => {
   beforeEach(() => {
+    vi.restoreAllMocks()
     window.localStorage.clear()
   })
 
@@ -23,7 +25,9 @@ describe('CI Doctor app', () => {
     await user.click(screen.getByRole('button', { name: /dependency/i }))
     await user.click(screen.getByRole('button', { name: /analyze log/i }))
 
-    expect(screen.getByRole('heading', { name: /missing dependency/i })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: /missing dependency/i }),
+    ).toBeInTheDocument()
     expect(screen.getByText(/commit both package\.json/i)).toBeInTheDocument()
   })
 
@@ -51,14 +55,40 @@ describe('CI Doctor app', () => {
     await user.click(screen.getByRole('button', { name: /analyze log/i }))
 
     expect(
-      screen.getByRole('heading', { name: /missing secret or environment variable/i }),
+      await screen.findByRole('heading', { name: /missing secret or environment variable/i }),
     ).toBeInTheDocument()
 
     await user.clear(logInput)
     await user.click(screen.getByRole('button', { name: /analyze log/i }))
 
-    expect(screen.getByRole('heading', { name: /empty log/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /empty log/i })).toBeInTheDocument()
     expect(screen.getByText(/paste a ci log to receive a diagnosis/i)).toBeInTheDocument()
+  })
+
+  it('shows when a backend AI analysis is returned', async () => {
+    const user = userEvent.setup()
+    const analysis = analyzeCiLog("Error: Cannot find module 'stripe'")
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          analysis,
+          note: 'Mock AI backend response.',
+          source: 'ai-backend',
+        }),
+        {
+          headers: { 'Content-Type': 'application/json' },
+          status: 200,
+        },
+      ),
+    )
+
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: /dependency/i }))
+    await user.click(screen.getByRole('button', { name: /analyze log/i }))
+
+    expect(await screen.findByText('AI backend')).toBeInTheDocument()
+    expect(screen.getByText(/mock ai backend response/i)).toBeInTheDocument()
   })
 
   it('ignores invalid saved history data instead of crashing', () => {

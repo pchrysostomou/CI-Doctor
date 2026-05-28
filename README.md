@@ -47,6 +47,9 @@ Run the app:
 npm run dev
 ```
 
+The local Vite server runs the frontend. The Vercel deployment also exposes the
+serverless API route at `/api/analyze`.
+
 Run lint:
 
 ```bash
@@ -98,6 +101,33 @@ It checks:
 - Playwright browser automation
 
 That gives you the classic professional GitHub signal: if the green check passes, the app builds and the main user journey still works.
+
+## AI backend
+
+CI Doctor now has two analysis modes:
+
+- deterministic rules for free local/demo usage
+- optional OpenAI-backed analysis through the Vercel serverless route `api/analyze.ts`
+
+No API key is required for the app to run. Without a key, the backend and browser fall back to deterministic CI rules.
+
+To enable AI analysis in Vercel, add these environment variables:
+
+```bash
+OPENAI_API_KEY=your_key_here
+OPENAI_MODEL=gpt-5.4-mini
+```
+
+Never put an OpenAI API key in the React frontend. The key belongs only in Vercel environment variables so it stays server-side.
+
+## How the app works
+
+1. The user pastes a GitHub Actions or test log.
+2. The React UI calls `/api/analyze`.
+3. On Vercel, the serverless function checks for `OPENAI_API_KEY`.
+4. If the key exists, the backend calls OpenAI's Responses API and asks for structured JSON.
+5. If the key is missing or the AI request fails, the backend returns deterministic rule-based analysis.
+6. The UI displays the diagnosis, source, confidence, fix steps, commands, and learning note.
 
 ## Automation test coverage
 

@@ -1,0 +1,209 @@
+import { analyzeCiLog, type AnalysisResult, type Severity } from '../src/lib/analyzer'
+
+type AnalysisSource = 'backend-rules' | 'ai-backend'
+
+type ApiResponse = {
+  analysis: AnalysisResult
+  source: AnalysisSource
+  note: string
+}
+
+const responseSchema = {
+  additionalProperties: false,
+  properties: {
+    category: { type: 'string' },
+    commands: {
+      items: { type: 'string' },
+      maxItems: 4,
+      minItems: 1,
+      type: 'array',
+    },
+    confidence: { maximum: 100, minimum: 0, type: 'number' },
+    fixSteps: {
+      items: { type: 'string' },
+      maxItems: 5,
+      minItems: 1,
+      type: 'array',
+    },
+    learningNote: { type: 'string' },
+    likelyCause: { type: 'string' },
+    minutesSaved: { maximum: 120, minimum: 0, type: 'number' },
+    severity: { enum: ['critical', 'high', 'medium', 'low'], type: 'string' },
+    summary: { type: 'string' },
+    title: { type: 'string' },
+  },
+  required: [
+    'title',
+    'category',
+    'severity',
+    'summary',
+    'likelyCause',
+    'fixSteps',
+    'commands',
+    'confidence',
+    'minutesSaved',
+    'learningNote',
+  ],
+  type: 'object',
+}
+
+const environment = globalThis as typeof globalThis & {
+  process?: {
+    env?: Record<string, string | undefined>
+  }
+}
+
+function json(payload: unknown, status = 200): Response {
+  return new Response(JSON.stringify(payload), {
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    status,
+  })
+}
+
+function isSeverity(value: unknown): value is Severity {
+  return value === 'critical' || value === 'high' || value === 'medium' || value === 'low'
+}
+
+function sanitizeAnalysis(value: unknown, fallback: AnalysisResult): AnalysisResult {
+  if (!value || typeof value !== 'object') {
+    return fallback
+  }
+
+  const candidate = value as Partial<AnalysisResult>
+  return {
+    title: typeof candidate.title === 'string' ? candidate.title : fallback.title,
+    category: typeof candidate.category === 'string' ? candidate.category : fallback.category,
+    severity: isSeverity(candidate.severity) ? candidate.severity : fallback.severity,
+    summary: typeof candidate.summary === 'string' ? candidate.summary : fallback.summary,
+    likelyCause:
+      typeof candidate.likelyCause === 'string' ? candidate.likelyCause : fallback.likelyCause,
+    fixSteps:
+      Array.isArray(candidate.fixSteps) && candidate.fixSteps.length > 0
+        ? candidate.fixSteps.filter((step) => typeof step === 'string').slice(0, 5)
+        : fallback.fixSteps,
+    commands:
+      Array.isArray(candidate.commands) && candidate.commands.length > 0
+        ? candidate.commands.filter((command) => typeof command === 'string').slice(0, 4)
+        : fallback.commands,
+    confidence:
+      typeof candidate.confidence === 'number'
+        ? Math.max(0, Math.min(100, candidate.confidence))
+        : fallback.confidence,
+    minutesSaved:
+      typeof candidate.minutesSaved === 'number'
+        ? Math.max(0, Math.min(120, candidate.minutesSaved))
+        : fallback.minutesSaved,
+    learningNote:
+      typeof candidate.learningNote === 'string'
+        ? candidate.learningNote
+        : fallback.learningNote,
+  }
+}
+
+function extractOutputText(payload: unknown): string {
+  if (!payload || typeof payload !== 'object') {
+    return ''
+  }
+
+  const response = payload as {
+    output?: Array<{ content?: Array<{ text?: unknown }> }>
+    output_text?: unknown
+  }
+
+  if (typeof response.output_text === 'string') {
+    return response.output_text
+  }
+
+  return (
+    response.output
+      ?.flatMap((item) => item.content ?? [])
+      .map((content) => content.text)
+      .find((text): text is string => typeof text === 'string') ?? ''
+  )
+}
+
+async function analyzeWithOpenAi(
+  logText: string,
+  fallback: AnalysisResult,
+): Promise<ApiResponse> {
+  const apiKey = environment.process?.env?.OPENAI_API_KEY
+  const model = environment.process?.env?.OPENAI_MODEL ?? 'gpt-5.4-mini'
+
+  if (!apiKey) {
+    return {
+      analysis: fallback,
+      source: 'backend-rules',
+      note: 'OPENAI_API_KEY is not configured, so the Vercel backend used deterministic CI rules.',
+    }
+  }
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    body: JSON.stringify({
+      input: `Analyze this GitHub Actions or automated test log:\n\n${logText.slice(
+        0,
+        12000,
+      )}`,
+      instructions:
+        'You are CI Doctor, a concise CI debugging assistant for junior developers. Return practical, safe debugging guidance. Do not claim files exist unless they are shown in the log.',
+      max_output_tokens: 1200,
+      model,
+      text: {
+        format: {
+          name: 'ci_diagnosis',
+          schema: responseSchema,
+          strict: true,
+          type: 'json_schema',
+        },
+      },
+    }),
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    method: 'POST',
+  })
+
+  if (!response.ok) {
+    throw new Error(`OpenAI request failed with ${response.status}`)
+  }
+
+  const payload: unknown = await response.json()
+  const outputText = extractOutputText(payload)
+  const parsed: unknown = JSON.parse(outputText)
+
+  return {
+    analysis: sanitizeAnalysis(parsed, fallback),
+    source: 'ai-backend',
+    note: `Analyzed by the Vercel backend with ${model}.`,
+  }
+}
+
+export default async function handler(request: Request): Promise<Response> {
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed' }, 405)
+  }
+
+  try {
+    const body: unknown = await request.json()
+    const logText =
+      body && typeof body === 'object' && typeof (body as { logText?: unknown }).logText === 'string'
+        ? (body as { logText: string }).logText
+        : ''
+
+    const fallback = analyzeCiLog(logText)
+
+    try {
+      return json(await analyzeWithOpenAi(logText, fallback))
+    } catch {
+      return json({
+        analysis: fallback,
+        source: 'backend-rules',
+        note: 'AI analysis was unavailable, so the backend used deterministic CI rules.',
+      })
+    }
+  } catch {
+    return json({ error: 'Invalid JSON request body' }, 400)
+  }
+}

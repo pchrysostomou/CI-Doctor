@@ -68,7 +68,7 @@ npm run test:unit
 Run Playwright browser tests:
 
 ```bash
-npx playwright install chromium
+npm run setup:browsers
 npm run test:e2e
 ```
 
@@ -76,6 +76,12 @@ Build production assets:
 
 ```bash
 npm run build
+```
+
+Run the full local CI suite:
+
+```bash
+npm run ci
 ```
 
 ## What GitHub CI tests
@@ -92,3 +98,27 @@ It checks:
 - Playwright browser automation
 
 That gives you the classic professional GitHub signal: if the green check passes, the app builds and the main user journey still works.
+
+## Automation test coverage
+
+Unit tests in `src/lib/analyzer.test.ts` check the core CI diagnosis rules:
+
+- failing test detection
+- missing dependency detection
+- missing secret/environment variable detection
+- empty log handling
+- monthly savings calculation
+- pricing plan recommendation
+
+Component tests in `src/App.test.tsx` check the React app behaviour:
+
+- the app loads with a useful default diagnosis
+- demo logs can be switched and analyzed
+- saved cases are written to local browser storage
+
+End-to-end tests in `e2e/ci-doctor.spec.ts` open the app in Chromium through Playwright:
+
+- analyze a dependency failure
+- verify the suggested command appears
+- save the analysis into history
+- move the pricing sliders and confirm the Team plan appears

@@ -43,10 +43,26 @@ function formatCurrency(value: number) {
   }).format(value)
 }
 
+function isSavedAnalysis(value: unknown): value is SavedAnalysis {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const candidate = value as Partial<SavedAnalysis>
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.title === 'string' &&
+    typeof candidate.category === 'string' &&
+    typeof candidate.severity === 'string' &&
+    typeof candidate.createdAt === 'string'
+  )
+}
+
 function loadHistory(): SavedAnalysis[] {
   try {
     const rawHistory = window.localStorage.getItem(STORAGE_KEY)
-    return rawHistory ? (JSON.parse(rawHistory) as SavedAnalysis[]) : []
+    const parsedHistory: unknown = rawHistory ? JSON.parse(rawHistory) : []
+    return Array.isArray(parsedHistory) ? parsedHistory.filter(isSavedAnalysis) : []
   } catch {
     return []
   }
@@ -283,17 +299,19 @@ function App() {
             </label>
           </div>
 
-        <div className="money-result">
-          <span>Estimated monthly time value</span>
-          <strong>{formatCurrency(monthlySavings)}</strong>
-          <p>
-            Suggested pricing anchor: <b>{suggestedPlan}</b>
-          </p>
-          <div className="revenue-meter" aria-hidden="true">
-            <span style={{ width: `${Math.min((monthlySavings / 1200) * 100, 100)}%` }} />
+          <div className="money-result">
+            <span>Estimated monthly time value</span>
+            <strong>{formatCurrency(monthlySavings)}</strong>
+            <p>
+              Suggested pricing anchor: <b>{suggestedPlan}</b>
+            </p>
+            <div className="revenue-meter" aria-hidden="true">
+              <span
+                style={{ width: `${Math.min((monthlySavings / 1200) * 100, 100)}%` }}
+              />
+            </div>
           </div>
         </div>
-      </div>
 
         <div className="pricing-panel">
           <div className="pricing-row">

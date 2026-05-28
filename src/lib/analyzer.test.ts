@@ -24,6 +24,27 @@ describe('analyzeCiLog', () => {
     expect(result.severity).toBe('critical')
   })
 
+  it('detects flaky browser automation from timeout output', () => {
+    const result = analyzeCiLog("TimeoutError: page.getByRole('button').timed out")
+
+    expect(result.title).toBe('Flaky or timing-sensitive test')
+    expect(result.commands).toContain('npx playwright test --trace on')
+  })
+
+  it('detects TypeScript compiler failures', () => {
+    const result = analyzeCiLog("TS2339: Property 'plan' does not exist on type User")
+
+    expect(result.title).toBe('TypeScript build failure')
+    expect(result.category).toBe('typecheck')
+  })
+
+  it('falls back safely for unknown CI failures', () => {
+    const result = analyzeCiLog('Error: Process completed with exit code 1')
+
+    expect(result.title).toBe('General CI failure')
+    expect(result.commands).toContain('npm run build')
+  })
+
   it('returns an empty-log state when no log is provided', () => {
     const result = analyzeCiLog('   ')
 

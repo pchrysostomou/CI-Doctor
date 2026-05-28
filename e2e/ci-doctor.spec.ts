@@ -1,6 +1,25 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
+import { analyzeCiLog } from '../src/lib/analyzer'
+
+async function useDeterministicApi(page: Page) {
+  await page.route('**/api/analyze', async (route) => {
+    const payload = route.request().postDataJSON() as { logText?: unknown }
+    const logText = typeof payload.logText === 'string' ? payload.logText : ''
+
+    await route.fulfill({
+      body: JSON.stringify({
+        analysis: analyzeCiLog(logText),
+        note: 'Playwright used deterministic backend rules for stable automation.',
+        source: 'backend-rules',
+      }),
+      contentType: 'application/json',
+      status: 200,
+    })
+  })
+}
 
 test('analyzes a dependency failure and saves it', async ({ page }) => {
+  await useDeterministicApi(page)
   await page.goto('/')
 
   await expect(
@@ -28,6 +47,7 @@ test('updates the pricing calculator with team-level value', async ({ page }) =>
 })
 
 test('handles a custom pasted environment failure', async ({ page }) => {
+  await useDeterministicApi(page)
   await page.goto('/')
 
   await page.getByLabel(/paste github actions output/i).fill(`

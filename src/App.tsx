@@ -37,7 +37,7 @@ const liveEvents = [
 ]
 const sourceLabels: Record<AnalysisSource, string> = {
   'ai-backend': 'AI backend (Gemini/OpenAI)',
-  'backend-rules': 'Vercel backend rules',
+  'backend-rules': 'Backend rules fallback',
   'browser-rules': 'Browser rules fallback',
 }
 

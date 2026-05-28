@@ -48,62 +48,62 @@ const responseSchema = {
 }
 
 const geminiResponseSchema = {
-  additionalProperties: false,
+  propertyOrdering: responseSchema.required,
   properties: {
     title: {
       description: 'Short diagnosis title.',
-      type: 'string',
+      type: 'STRING',
     },
     category: {
       description: 'Failure category, such as dependency, test failure, environment, lint, or typecheck.',
-      type: 'string',
+      type: 'STRING',
     },
     severity: {
       description: 'Impact level for the failure.',
       enum: ['critical', 'high', 'medium', 'low'],
-      type: 'string',
+      type: 'STRING',
     },
     summary: {
       description: 'Brief explanation of what failed.',
-      type: 'string',
+      type: 'STRING',
     },
     likelyCause: {
       description: 'Most likely root cause based only on the pasted log.',
-      type: 'string',
+      type: 'STRING',
     },
     fixSteps: {
       description: 'Actionable steps the developer should take next.',
-      items: { type: 'string' },
+      items: { type: 'STRING' },
       maxItems: 5,
       minItems: 1,
-      type: 'array',
+      type: 'ARRAY',
     },
     commands: {
       description: 'Safe local commands to verify the fix.',
-      items: { type: 'string' },
+      items: { type: 'STRING' },
       maxItems: 4,
       minItems: 1,
-      type: 'array',
+      type: 'ARRAY',
     },
     confidence: {
       description: 'Confidence score from 0 to 100.',
       maximum: 100,
       minimum: 0,
-      type: 'number',
+      type: 'NUMBER',
     },
     minutesSaved: {
       description: 'Estimated debugging minutes saved.',
       maximum: 120,
       minimum: 0,
-      type: 'number',
+      type: 'NUMBER',
     },
     learningNote: {
       description: 'Short teaching note for a junior developer.',
-      type: 'string',
+      type: 'STRING',
     },
   },
   required: responseSchema.required,
-  type: 'object',
+  type: 'OBJECT',
 }
 
 const environment = globalThis as typeof globalThis & {
@@ -124,6 +124,14 @@ function json(payload: unknown, status = 200): Response {
 function getEnv(name: string): string | undefined {
   const value = environment.process?.env?.[name]
   return value && value.trim().length > 0 ? value : undefined
+}
+
+function describeProviderError(error: unknown): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message
+  }
+
+  return 'unknown provider error'
 }
 
 function isSeverity(value: unknown): value is Severity {
@@ -231,12 +239,8 @@ async function analyzeWithGemini(
           },
         ],
         generationConfig: {
-          responseFormat: {
-            text: {
-              mimeType: 'application/json',
-              schema: geminiResponseSchema,
-            },
-          },
+          responseMimeType: 'application/json',
+          responseSchema: geminiResponseSchema,
         },
         systemInstruction: {
           parts: [
@@ -265,7 +269,7 @@ async function analyzeWithGemini(
   return {
     analysis: sanitizeAnalysis(parsed, fallback),
     source: 'ai-backend',
-    note: `Analyzed by the Vercel backend with Gemini (${model}).`,
+    note: `Analyzed by the backend with Gemini (${model}).`,
   }
 }
 
@@ -310,7 +314,7 @@ async function analyzeWithOpenAi(
   return {
     analysis: sanitizeAnalysis(parsed, fallback),
     source: 'ai-backend',
-    note: `Analyzed by the Vercel backend with OpenAI (${model}).`,
+    note: `Analyzed by the backend with OpenAI (${model}).`,
   }
 }
 
@@ -324,12 +328,14 @@ async function analyzeWithConfiguredProvider(
   if (geminiApiKey) {
     try {
       return await analyzeWithGemini(logText, fallback, geminiApiKey)
-    } catch {
+    } catch (error) {
       if (!openAiApiKey) {
         return {
           analysis: fallback,
           source: 'backend-rules',
-          note: 'Gemini analysis was unavailable, so the backend used deterministic CI rules.',
+          note: `Gemini analysis was unavailable (${describeProviderError(
+            error,
+          )}), so the backend used deterministic CI rules.`,
         }
       }
     }
@@ -338,11 +344,13 @@ async function analyzeWithConfiguredProvider(
   if (openAiApiKey) {
     try {
       return await analyzeWithOpenAi(logText, fallback, openAiApiKey)
-    } catch {
+    } catch (error) {
       return {
         analysis: fallback,
         source: 'backend-rules',
-        note: 'AI analysis was unavailable, so the backend used deterministic CI rules.',
+        note: `AI analysis was unavailable (${describeProviderError(
+          error,
+        )}), so the backend used deterministic CI rules.`,
       }
     }
   }
@@ -350,7 +358,7 @@ async function analyzeWithConfiguredProvider(
   return {
     analysis: fallback,
     source: 'backend-rules',
-    note: 'No GEMINI_API_KEY or OPENAI_API_KEY is configured, so the Vercel backend used deterministic CI rules.',
+    note: 'No GEMINI_API_KEY or OPENAI_API_KEY is configured, so the backend used deterministic CI rules.',
   }
 }
 

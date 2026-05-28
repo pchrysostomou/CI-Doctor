@@ -36,7 +36,7 @@ const liveEvents = [
   'value estimated',
 ]
 const sourceLabels: Record<AnalysisSource, string> = {
-  'ai-backend': 'AI backend',
+  'ai-backend': 'AI backend (Gemini/OpenAI)',
   'backend-rules': 'Vercel backend rules',
   'browser-rules': 'Browser rules fallback',
 }
@@ -393,7 +393,7 @@ function App() {
           <FlowStep
             number="03"
             title="AI or fallback"
-            text="If OPENAI_API_KEY exists, the backend asks OpenAI. If not, it uses deterministic CI rules."
+            text="If GEMINI_API_KEY exists, the backend asks Gemini. OpenAI can be used as fallback, then CI rules."
           />
           <FlowStep
             number="04"

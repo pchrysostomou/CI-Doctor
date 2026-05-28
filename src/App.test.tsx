@@ -87,7 +87,7 @@ describe('CI Doctor app', () => {
     await user.click(screen.getByRole('button', { name: /dependency/i }))
     await user.click(screen.getByRole('button', { name: /analyze log/i }))
 
-    expect(await screen.findByText('AI backend')).toBeInTheDocument()
+    expect(await screen.findByText('AI backend (Gemini/OpenAI)')).toBeInTheDocument()
     expect(screen.getByText(/mock ai backend response/i)).toBeInTheDocument()
   })
 

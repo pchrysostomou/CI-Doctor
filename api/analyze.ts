@@ -47,6 +47,65 @@ const responseSchema = {
   type: 'object',
 }
 
+const geminiResponseSchema = {
+  additionalProperties: false,
+  properties: {
+    title: {
+      description: 'Short diagnosis title.',
+      type: 'string',
+    },
+    category: {
+      description: 'Failure category, such as dependency, test failure, environment, lint, or typecheck.',
+      type: 'string',
+    },
+    severity: {
+      description: 'Impact level for the failure.',
+      enum: ['critical', 'high', 'medium', 'low'],
+      type: 'string',
+    },
+    summary: {
+      description: 'Brief explanation of what failed.',
+      type: 'string',
+    },
+    likelyCause: {
+      description: 'Most likely root cause based only on the pasted log.',
+      type: 'string',
+    },
+    fixSteps: {
+      description: 'Actionable steps the developer should take next.',
+      items: { type: 'string' },
+      maxItems: 5,
+      minItems: 1,
+      type: 'array',
+    },
+    commands: {
+      description: 'Safe local commands to verify the fix.',
+      items: { type: 'string' },
+      maxItems: 4,
+      minItems: 1,
+      type: 'array',
+    },
+    confidence: {
+      description: 'Confidence score from 0 to 100.',
+      maximum: 100,
+      minimum: 0,
+      type: 'number',
+    },
+    minutesSaved: {
+      description: 'Estimated debugging minutes saved.',
+      maximum: 120,
+      minimum: 0,
+      type: 'number',
+    },
+    learningNote: {
+      description: 'Short teaching note for a junior developer.',
+      type: 'string',
+    },
+  },
+  required: responseSchema.required,
+  type: 'object',
+}
+
 const environment = globalThis as typeof globalThis & {
   process?: {
     env?: Record<string, string | undefined>
@@ -60,6 +119,11 @@ function json(payload: unknown, status = 200): Response {
     },
     status,
   })
+}
+
+function getEnv(name: string): string | undefined {
+  const value = environment.process?.env?.[name]
+  return value && value.trim().length > 0 ? value : undefined
 }
 
 function isSeverity(value: unknown): value is Severity {
@@ -124,27 +188,97 @@ function extractOutputText(payload: unknown): string {
   )
 }
 
+function extractGeminiText(payload: unknown): string {
+  if (!payload || typeof payload !== 'object') {
+    return ''
+  }
+
+  const response = payload as {
+    candidates?: Array<{
+      content?: {
+        parts?: Array<{ text?: unknown }>
+      }
+    }>
+  }
+
+  return (
+    response.candidates
+      ?.flatMap((candidate) => candidate.content?.parts ?? [])
+      .map((part) => part.text)
+      .find((text): text is string => typeof text === 'string') ?? ''
+  )
+}
+
+function buildPrompt(logText: string): string {
+  return `Analyze this GitHub Actions or automated test log:\n\n${logText.slice(0, 12000)}`
+}
+
+async function analyzeWithGemini(
+  logText: string,
+  fallback: AnalysisResult,
+  apiKey: string,
+): Promise<ApiResponse> {
+  const model = getEnv('GEMINI_MODEL') ?? 'gemini-3.5-flash'
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+    {
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [{ text: buildPrompt(logText) }],
+            role: 'user',
+          },
+        ],
+        generationConfig: {
+          responseFormat: {
+            text: {
+              mimeType: 'application/json',
+              schema: geminiResponseSchema,
+            },
+          },
+        },
+        systemInstruction: {
+          parts: [
+            {
+              text: 'You are CI Doctor, a concise CI debugging assistant for junior developers. Return practical, safe debugging guidance. Do not claim files exist unless they are shown in the log.',
+            },
+          ],
+        },
+      }),
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
+      method: 'POST',
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error(`Gemini request failed with ${response.status}`)
+  }
+
+  const payload: unknown = await response.json()
+  const outputText = extractGeminiText(payload)
+  const parsed: unknown = JSON.parse(outputText)
+
+  return {
+    analysis: sanitizeAnalysis(parsed, fallback),
+    source: 'ai-backend',
+    note: `Analyzed by the Vercel backend with Gemini (${model}).`,
+  }
+}
+
 async function analyzeWithOpenAi(
   logText: string,
   fallback: AnalysisResult,
+  apiKey: string,
 ): Promise<ApiResponse> {
-  const apiKey = environment.process?.env?.OPENAI_API_KEY
-  const model = environment.process?.env?.OPENAI_MODEL ?? 'gpt-5.4-mini'
-
-  if (!apiKey) {
-    return {
-      analysis: fallback,
-      source: 'backend-rules',
-      note: 'OPENAI_API_KEY is not configured, so the Vercel backend used deterministic CI rules.',
-    }
-  }
+  const model = getEnv('OPENAI_MODEL') ?? 'gpt-5.4-mini'
 
   const response = await fetch('https://api.openai.com/v1/responses', {
     body: JSON.stringify({
-      input: `Analyze this GitHub Actions or automated test log:\n\n${logText.slice(
-        0,
-        12000,
-      )}`,
+      input: buildPrompt(logText),
       instructions:
         'You are CI Doctor, a concise CI debugging assistant for junior developers. Return practical, safe debugging guidance. Do not claim files exist unless they are shown in the log.',
       max_output_tokens: 1200,
@@ -176,7 +310,47 @@ async function analyzeWithOpenAi(
   return {
     analysis: sanitizeAnalysis(parsed, fallback),
     source: 'ai-backend',
-    note: `Analyzed by the Vercel backend with ${model}.`,
+    note: `Analyzed by the Vercel backend with OpenAI (${model}).`,
+  }
+}
+
+async function analyzeWithConfiguredProvider(
+  logText: string,
+  fallback: AnalysisResult,
+): Promise<ApiResponse> {
+  const geminiApiKey = getEnv('GEMINI_API_KEY') ?? getEnv('GOOGLE_API_KEY')
+  const openAiApiKey = getEnv('OPENAI_API_KEY')
+
+  if (geminiApiKey) {
+    try {
+      return await analyzeWithGemini(logText, fallback, geminiApiKey)
+    } catch {
+      if (!openAiApiKey) {
+        return {
+          analysis: fallback,
+          source: 'backend-rules',
+          note: 'Gemini analysis was unavailable, so the backend used deterministic CI rules.',
+        }
+      }
+    }
+  }
+
+  if (openAiApiKey) {
+    try {
+      return await analyzeWithOpenAi(logText, fallback, openAiApiKey)
+    } catch {
+      return {
+        analysis: fallback,
+        source: 'backend-rules',
+        note: 'AI analysis was unavailable, so the backend used deterministic CI rules.',
+      }
+    }
+  }
+
+  return {
+    analysis: fallback,
+    source: 'backend-rules',
+    note: 'No GEMINI_API_KEY or OPENAI_API_KEY is configured, so the Vercel backend used deterministic CI rules.',
   }
 }
 
@@ -194,15 +368,7 @@ export default async function handler(request: Request): Promise<Response> {
 
     const fallback = analyzeCiLog(logText)
 
-    try {
-      return json(await analyzeWithOpenAi(logText, fallback))
-    } catch {
-      return json({
-        analysis: fallback,
-        source: 'backend-rules',
-        note: 'AI analysis was unavailable, so the backend used deterministic CI rules.',
-      })
-    }
+    return json(await analyzeWithConfiguredProvider(logText, fallback))
   } catch {
     return json({ error: 'Invalid JSON request body' }, 400)
   }

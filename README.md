@@ -31,36 +31,36 @@ Paste a CI or test log and CI Doctor returns:
 
 ```mermaid
 flowchart LR
-  A[Developer pastes failing CI log] --> B[React workbench]
-  B --> C[/api/analyze]
-  C --> D{AI key configured?}
-  D -->|Gemini key| E[Gemini structured JSON diagnosis]
-  D -->|OpenAI fallback key| F[OpenAI structured JSON diagnosis]
-  D -->|No key or provider error| G[Deterministic CI rules]
-  E --> H[Diagnosis panel]
+  A["Developer pastes failing CI log"] --> B["React workbench"]
+  B --> C["API route: /api/analyze"]
+  C --> D{"AI key configured?"}
+  D -->|Gemini key| E["Gemini structured JSON diagnosis"]
+  D -->|OpenAI fallback key| F["OpenAI structured JSON diagnosis"]
+  D -->|No key or provider error| G["Deterministic CI rules"]
+  E --> H["Diagnosis panel"]
   F --> H
   G --> H
-  H --> I[Fix plan, commands, learning note, value estimate]
+  H --> I["Fix plan, commands, learning note, value estimate"]
 ```
 
 ## Architecture
 
 ```mermaid
 flowchart TB
-  subgraph Client[Frontend]
-    UI[React + TypeScript UI]
-    Storage[Local saved cases]
+  subgraph Client["Frontend"]
+    UI["React + TypeScript UI"]
+    Storage["Local saved cases"]
   end
 
-  subgraph Server[Serverless backend]
-    API[api/analyze.ts]
-    Schema[Structured response validation]
-    Rules[Deterministic analyzer rules]
+  subgraph Server["Serverless backend"]
+    API["Serverless API: api/analyze.ts"]
+    Schema["Structured response validation"]
+    Rules["Deterministic analyzer rules"]
   end
 
-  subgraph Providers[Optional AI providers]
-    Gemini[Google Gemini]
-    OpenAI[OpenAI fallback]
+  subgraph Providers["Optional AI providers"]
+    Gemini["Google Gemini"]
+    OpenAI["OpenAI fallback"]
   end
 
   UI --> API
@@ -110,7 +110,7 @@ Provider order:
 sequenceDiagram
   participant User
   participant UI as React UI
-  participant API as /api/analyze
+  participant API as API route
   participant Gemini
   participant Rules as Rule engine
 
@@ -191,14 +191,14 @@ The project includes a full GitHub Actions workflow.
 
 ```mermaid
 flowchart LR
-  A[Push or Pull Request] --> B[npm ci]
-  B --> C[ESLint]
-  C --> D[TypeScript typecheck]
-  D --> E[Vitest unit and component tests]
-  E --> F[Production build]
-  F --> G[Install Chromium]
-  G --> H[Playwright browser tests]
-  H --> I[Green CI check]
+  A["Push or Pull Request"] --> B["npm ci"]
+  B --> C["ESLint"]
+  C --> D["TypeScript typecheck"]
+  D --> E["Vitest unit and component tests"]
+  E --> F["Production build"]
+  F --> G["Install Chromium"]
+  G --> H["Playwright browser tests"]
+  H --> I["Green CI check"]
 ```
 
 Run everything locally:

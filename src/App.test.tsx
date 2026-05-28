@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
@@ -50,15 +50,16 @@ describe('CI Doctor app', () => {
 
     const logInput = screen.getByLabelText(/paste github actions output/i)
 
-    await user.clear(logInput)
-    await user.type(logInput, 'Missing required environment variable STRIPE_SECRET_KEY')
+    fireEvent.change(logInput, {
+      target: { value: 'Missing required environment variable STRIPE_SECRET_KEY' },
+    })
     await user.click(screen.getByRole('button', { name: /analyze log/i }))
 
     expect(
       await screen.findByRole('heading', { name: /missing secret or environment variable/i }),
     ).toBeInTheDocument()
 
-    await user.clear(logInput)
+    fireEvent.change(logInput, { target: { value: '' } })
     await user.click(screen.getByRole('button', { name: /analyze log/i }))
 
     expect(await screen.findByRole('heading', { name: /empty log/i })).toBeInTheDocument()
@@ -89,6 +90,7 @@ describe('CI Doctor app', () => {
 
     expect(await screen.findByText('AI backend (Gemini/OpenAI)')).toBeInTheDocument()
     expect(screen.getByText(/mock ai backend response/i)).toBeInTheDocument()
+    expect(screen.queryByText(/draft log now looks/i)).not.toBeInTheDocument()
   })
 
   it('ignores invalid saved history data instead of crashing', () => {

@@ -86,6 +86,7 @@ function App() {
   const [hourlyRate, setHourlyRate] = useState(28)
   const [activeSignalIndex, setActiveSignalIndex] = useState(0)
   const [saveMessage, setSaveMessage] = useState('')
+  const [lastAnalyzedLogText, setLastAnalyzedLogText] = useState(logSamples[0].log)
   const [analysisSource, setAnalysisSource] = useState<AnalysisSource>('browser-rules')
   const [analysisNote, setAnalysisNote] = useState(
     'Initial demo analysis is running locally in the browser.',
@@ -93,6 +94,7 @@ function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
 
   const livePreview = useMemo(() => analyzeCiLog(logText), [logText])
+  const hasUnanalyzedChanges = logText !== lastAnalyzedLogText
   const monthlySavings = calculateMonthlySavings({
     failuresPerWeek,
     minutesPerFailure,
@@ -130,21 +132,24 @@ function App() {
     setSelectedSampleId(sample.id)
     setLogText(sample.log)
     setLastAnalysis(analyzeCiLog(sample.log))
+    setLastAnalyzedLogText(sample.log)
     setAnalysisSource('browser-rules')
     setAnalysisNote('Demo sample analyzed instantly with deterministic browser rules.')
   }
 
   async function analyzeCurrentLog() {
+    const analyzedLogText = logText
     setIsAnalyzing(true)
-    const response = await requestAnalysis(logText)
+    const response = await requestAnalysis(analyzedLogText)
     setLastAnalysis(response.analysis)
+    setLastAnalyzedLogText(analyzedLogText)
     setAnalysisSource(response.source)
     setAnalysisNote(response.note)
     setIsAnalyzing(false)
   }
 
   function saveCurrentAnalysis() {
-    const result = livePreview.title !== lastAnalysis.title ? livePreview : lastAnalysis
+    const result = hasUnanalyzedChanges ? livePreview : lastAnalysis
     const saved: SavedAnalysis = {
       id: `${Date.now()}-${result.category}`,
       title: result.title,
@@ -154,8 +159,11 @@ function App() {
     }
 
     setLastAnalysis(result)
-    setAnalysisSource('browser-rules')
-    setAnalysisNote('Saved case used the current visible diagnosis state.')
+    setLastAnalyzedLogText(logText)
+    if (hasUnanalyzedChanges) {
+      setAnalysisSource('browser-rules')
+      setAnalysisNote('Saved case used deterministic browser rules because the edited log was not re-analyzed yet.')
+    }
     setSaveMessage(`${result.title} saved`)
     setHistory((current) => [saved, ...current].slice(0, 5))
   }
@@ -282,6 +290,7 @@ function App() {
           result={lastAnalysis}
           source={analysisSource}
           preview={livePreview}
+          hasUnanalyzedChanges={hasUnanalyzedChanges}
         />
       </section>
 
@@ -468,11 +477,17 @@ type DiagnosisPanelProps = {
   result: AnalysisResult
   source: AnalysisSource
   preview: AnalysisResult
+  hasUnanalyzedChanges: boolean
 }
 
-function DiagnosisPanel({ isAnalyzing, note, result, source, preview }: DiagnosisPanelProps) {
-  const previewChanged = preview.title !== result.title
-
+function DiagnosisPanel({
+  isAnalyzing,
+  note,
+  result,
+  source,
+  preview,
+  hasUnanalyzedChanges,
+}: DiagnosisPanelProps) {
   return (
     <aside aria-busy={isAnalyzing} className="diagnosis-pane" aria-label="Diagnosis result">
       <div className="result-header">
@@ -536,7 +551,7 @@ function DiagnosisPanel({ isAnalyzing, note, result, source, preview }: Diagnosi
         <p>{result.learningNote}</p>
       </div>
 
-      {previewChanged ? (
+      {hasUnanalyzedChanges ? (
         <p className="preview-warning">
           The draft log now looks like <b>{preview.title}</b>. Press Analyze log to lock
           this result.
